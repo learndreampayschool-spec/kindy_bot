@@ -3,6 +3,8 @@ services:
     name: kindy-bot
     env: python
     plan: starter
+    runtime: python
+    pythonVersion: 3.11.9
     buildCommand: "pip install --upgrade pip setuptools wheel && pip install -r requirements.txt"
     startCommand: "python bot.py"
     envVars:
