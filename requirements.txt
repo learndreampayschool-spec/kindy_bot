@@ -1,2 +1,16 @@
 aiogram==2.25.2
 aiohttp==3.8.6
+python-dotenv==1.0.1
+async-timeout==4.0.3
+attrs==25.3.0
+Babel==2.9.1
+certifi
+charset-normalizer==3.4.3
+frozenlist==1.4.1
+idna==3.10
+magic-filter==1.0.12
+multidict==6.0.4
+propcache==0.3.2
+pytz==2025.2
+typing-extensions==4.15.0
+yarl==1.9.4
