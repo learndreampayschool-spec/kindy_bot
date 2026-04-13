@@ -1,170 +1,148 @@
 import logging
 import json
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils import executor
 
-API_TOKEN = "7556358154:AAGdl65GLbDi4EvHdRl84VPRxlRkqgsTGVg"
+API_TOKEN = "ТУТ_ТВІЙ_ТОКЕН"
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+dp = Dispatcher(bot)
 
-# Завантаження JSON
 with open("menu_data.json", "r", encoding="utf-8") as f:
     menu_data = json.load(f)
 
-# --- STATES ---
-class MenuStates(StatesGroup):
-    age = State()
-    season = State()
-    topic = State()
-    section = State()
+user_state = {}
 
-# --- КНОПКИ ---
-def kb(items, add_back=True):
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+# ---------- КНОПКИ ----------
+
+def make_kb(items, back=True):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
     for item in items:
-        keyboard.add(item)
-    if add_back:
-        keyboard.add("⬅️ Назад")
-    return keyboard
+        kb.add(KeyboardButton(item))
+    if back:
+        kb.add(KeyboardButton("⬅️ Назад"))
+    return kb
 
-# --- START ---
+# ---------- START ----------
+
 @dp.message_handler(commands=["start"])
-async def start(m: types.Message, state: FSMContext):
-    await state.finish()
-    await MenuStates.age.set()
-    await m.answer("Оберіть вікову категорію:", reply_markup=kb(menu_data.keys(), add_back=False))
+async def start(msg: types.Message):
+    user_state[msg.chat.id] = {}
+    await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
 
-# --- ВІК ---
-@dp.message_handler(state=MenuStates.age)
-async def choose_age(m: types.Message, state: FSMContext):
-    if m.text not in menu_data:
+# ---------- ОБРОБКА ----------
+
+@dp.message_handler()
+async def handler(msg: types.Message):
+    text = msg.text
+    user = user_state.setdefault(msg.chat.id, {})
+
+    # НАЗАД
+    if text == "⬅️ Назад":
+        if "topic" in user:
+            user.pop("topic")
+            topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+            await msg.answer("Оберіть тему:", reply_markup=make_kb(topics.keys()))
+            return
+
+        elif "month" in user:
+            user.pop("month")
+            months = menu_data[user["age"]][user["season"]]
+            await msg.answer("Оберіть місяць:", reply_markup=make_kb(months.keys()))
+            return
+
+        elif "season" in user:
+            user.pop("season")
+            await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
+            return
+
+        elif "age" in user:
+            user.clear()
+            await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
+            return
+
+    # ВІК
+    if text in menu_data:
+        user["age"] = text
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[text].keys()))
         return
 
-    await state.update_data(age=m.text)
-    await MenuStates.season.set()
-
-    await m.answer("Оберіть сезон:", reply_markup=kb(menu_data[m.text].keys()))
-
-# --- СЕЗОН ---
-@dp.message_handler(state=MenuStates.season)
-async def choose_season(m: types.Message, state: FSMContext):
-
-    if m.text == "⬅️ Назад":
-        await MenuStates.age.set()
-        return await m.answer("Оберіть вікову категорію:", reply_markup=kb(menu_data.keys(), add_back=False))
-
-    data = await state.get_data()
-    age = data["age"]
-
-    if m.text not in menu_data[age]:
+    # СЕЗОН
+    if "age" in user and text in menu_data[user["age"]]:
+        user["season"] = text
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(menu_data[user["age"]][text].keys()))
         return
 
-    await state.update_data(season=m.text)
-    await MenuStates.topic.set()
+    # МІСЯЦЬ
+    if "season" in user:
+        months = menu_data[user["age"]][user["season"]]
+        if text in months:
+            user["month"] = text
+            topics = months[text]["topics"]
+            kb = list(topics.keys()) + ["📄 PDF"]
+            await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
+            return
 
-    await m.answer("Оберіть тему:", reply_markup=kb(menu_data[age][m.text].keys()))
-
-# --- ТЕМА ---
-@dp.message_handler(state=MenuStates.topic)
-async def choose_topic(m: types.Message, state: FSMContext):
-
-    if m.text == "⬅️ Назад":
-        data = await state.get_data()
-        age = data["age"]
-
-        await MenuStates.season.set()
-        return await m.answer("Оберіть сезон:", reply_markup=kb(menu_data[age].keys()))
-
-    data = await state.get_data()
-    age = data["age"]
-    season = data["season"]
-
-    if m.text not in menu_data[age][season]:
+    # PDF
+    if text == "📄 PDF":
+        link = menu_data[user["age"]][user["season"]][user["month"]]["pdf"]
+        await msg.answer(f"Відкрити PDF:\n{link}")
         return
 
-    await state.update_data(topic=m.text)
-    await MenuStates.section.set()
+    # ТЕМА
+    topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+    if text in topics:
+        user["topic"] = text
+        await msg.answer(
+            "Оберіть розділ:",
+            reply_markup=make_kb([
+                "📩 Батькам",
+                "📅 Дні",
+                "🎵 Пісні",
+                "🎮 Ігри"
+            ])
+        )
+        return
 
-    await m.answer(
-        "Оберіть розділ:",
-        reply_markup=kb(["Методичка", "Відео", "Батькам", "Ігри", "Завдання"])
-    )
+    topic = topics[user.get("topic")]
 
-# --- РОЗДІЛ ---
-@dp.message_handler(state=MenuStates.section)
-async def show_section(m: types.Message, state: FSMContext):
+    # БАТЬКИ
+    if text == "📩 Батькам":
+        await msg.answer(topic["parents"])
+        return
 
-    data = await state.get_data()
+    # ДНІ
+    if text == "📅 Дні":
+        await msg.answer("Оберіть день:", reply_markup=make_kb(topic["days"].keys()))
+        return
 
-    # --- НАЗАД (РОЗУМНИЙ) ---
-    if m.text == "⬅️ Назад":
+    if text in topic["days"]:
+        await msg.answer(topic["days"][text], protect_content=True)
+        return
 
-        # назад до тем
-        if "topic" in data:
-            await MenuStates.topic.set()
-            age = data["age"]
-            season = data["season"]
-            return await m.answer("Оберіть тему:", reply_markup=kb(menu_data[age][season].keys()))
+    # ПІСНІ
+    if text == "🎵 Пісні":
+        kb = [s["name"] for s in topic["songs"]]
+        await msg.answer("Оберіть пісню:", reply_markup=make_kb(kb))
+        return
 
-        # назад до сезонів
-        elif "season" in data:
-            await MenuStates.season.set()
-            age = data["age"]
-            return await m.answer("Оберіть сезон:", reply_markup=kb(menu_data[age].keys()))
+    for song in topic["songs"]:
+        if text == song["name"]:
+            await msg.answer(
+                f"🎵 {song['name']}\n\n"
+                f"🔘 Текст:\n{song['text']}\n\n"
+                f"🔘 Відео:\n{song['link']}"
+            )
+            return
 
-        # назад до віку
-        elif "age" in data:
-            await MenuStates.age.set()
-            return await m.answer("Оберіть вікову категорію:", reply_markup=kb(menu_data.keys(), add_back=False))
+    # ІГРИ
+    if text == "🎮 Ігри":
+        await msg.answer("\n".join(topic["games"]), protect_content=True)
+        return
 
-    age = data["age"]
-    season = data["season"]
-    topic = data["topic"]
 
-    content = menu_data[age][season][topic]
-
-    # --- МЕТОДИЧКА ---
-    if m.text == "Методичка":
-        text = content.get("method", "Немає методички")
-        await m.answer(text)
-
-    # --- ВІДЕО ---
-    elif m.text == "Відео":
-        videos = content.get("video", [])
-        if videos:
-            for v in videos:
-                await m.answer(v)
-        else:
-            await m.answer("Немає відео")
-
-    # --- БАТЬКАМ ---
-    elif m.text == "Батькам":
-        text = content.get("parents", "Немає інформації")
-        await m.answer(text)
-
-    # --- ІГРИ ---
-    elif m.text == "Ігри":
-        games = content.get("games", [])
-        if games:
-            for g in games:
-                await m.answer(g)
-        else:
-            await m.answer("Немає ігор")
-
-    # --- ЗАВДАННЯ ---
-    elif m.text == "Завдання":
-        tasks = content.get("tasks", [])
-        if tasks:
-            for t in tasks:
-                await m.answer(t)
-        else:
-            await m.answer("Немає завдань")
-
-# --- ЗАПУСК ---
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
