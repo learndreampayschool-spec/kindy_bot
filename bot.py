@@ -1,182 +1,151 @@
-import os
 import json
-from dotenv import load_dotenv
-
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-load_dotenv()
-API_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 711960970
+TOKEN = "7556358154:AAGdl65GLbDi4EvHdRl84VPRxlRkqgsTGVg"
 
-bot = Bot(token=API_TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+bot = Bot(token=TOKEN)
+dp = Dispatcher(bot)
 
-MENU_FILE = "/var/data/menu_data.json"
+DATA_PATH = "/var/data/menu_data.json"
 
-# ================= DATA =================
-
-def ensure_file():
-    os.makedirs("/var/data", exist_ok=True)
-    if not os.path.exists(MENU_FILE):
-        with open(MENU_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-
-def migrate(data):
-    for age in data:
-        for season in data[age]:
-            for topic in data[age][season]:
-                t = data[age][season][topic]
-
-                # стара структура → нова
-                if "messages" in t:
-                    t = {
-                        "method": t["messages"],
-                        "video": [],
-                        "parents": [],
-                        "games": [],
-                        "tasks": []
-                    }
-
-                # гарантуємо всі поля
-                for key in ["method","video","parents","games","tasks"]:
-                    t.setdefault(key, [])
-
-                data[age][season][topic] = t
-
-            # 🔥 додаємо літо автоматично
-            if "Літо" not in data[age]:
-                data[age]["Літо"] = {}
-
-    return data
-
-def load_menu():
-    ensure_file()
+def load_data():
     try:
-        with open(MENU_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-            return migrate(data)
+        with open(DATA_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
     except:
         return {}
 
-def save_menu(data):
-    with open(MENU_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+menu_data = load_data()
+user_state = {}
 
-menu_data = load_menu()
+# ================= START =================
 
-# ================= UI =================
+@dp.message_handler(commands=["start"])
+async def start(m: types.Message):
+    global menu_data
+    menu_data = load_data()
 
-def kb(list_items, back=True):
-    k = ReplyKeyboardMarkup(resize_keyboard=True)
-    for i in list_items:
-        k.add(KeyboardButton(i))
-    if back:
-        k.add(KeyboardButton("⬅️ Назад"))
-    return k
-
-def topic_menu():
-    k = ReplyKeyboardMarkup(resize_keyboard=True)
-    k.add("📘 Методичка")
-    k.add("🎵 Відео/пісня")
-    k.add("💬 Батькам")
-    k.add("🎲 Ігри")
-    k.add("📄 Завдання")
-    k.add("⬅️ Назад")
-    return k
-
-# ================= STATES =================
-
-class S(StatesGroup):
-    age = State()
-    season = State()
-    topic = State()
-    section = State()
-
-# ================= FLOW =================
-
-@dp.message_handler(commands=["start"], state="*")
-async def start(m: types.Message, s: FSMContext):
-    await s.finish()
     if not menu_data:
-        return await m.answer("⚠️ Дані ще не додані")
-
-    k = kb(menu_data.keys(), False)
-    if m.from_user.id == ADMIN_ID:
-        k.add("🛠 Адмін")
-
-    await m.answer("Оберіть вік:", reply_markup=k)
-    await S.age.set()
-
-@dp.message_handler(state=S.age)
-async def age(m: types.Message, s: FSMContext):
-    if m.text not in menu_data:
-        return
-    await s.update_data(age=m.text)
-    await m.answer("Сезон:", reply_markup=kb(menu_data[m.text].keys()))
-    await S.season.set()
-
-@dp.message_handler(state=S.season)
-async def season(m: types.Message, s: FSMContext):
-    d = await s.get_data()
-    age = d["age"]
-
-    if m.text not in menu_data[age]:
+        await m.answer("⚠️ Дані ще не додані")
         return
 
-    await s.update_data(season=m.text)
-    await m.answer("Тема:", reply_markup=kb(menu_data[age][m.text].keys()))
-    await S.topic.set()
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    for age in menu_data.keys():
+        kb.add(KeyboardButton(age))
 
-@dp.message_handler(state=S.topic)
-async def topic(m: types.Message, s: FSMContext):
-    d = await s.get_data()
-    age, season = d["age"], d["season"]
+    user_state[m.from_user.id] = {"step": "age"}
+    await m.answer("Оберіть вікову категорію:", reply_markup=kb)
 
-    if m.text not in menu_data[age][season]:
+# ================= HANDLER =================
+
+@dp.message_handler()
+async def handler(m: types.Message):
+    uid = m.from_user.id
+    text = m.text
+
+    if uid not in user_state:
+        await start(m)
         return
 
-    await s.update_data(topic=m.text)
-    await m.answer("Обери розділ:", reply_markup=topic_menu())
-    await S.section.set()
+    state = user_state[uid]
 
-# ================= SECTIONS =================
+    # 🔹 ВИБІР ВІКУ
+    if state["step"] == "age":
+        if text not in menu_data:
+            return
 
-def send_list(m, data):
-    if not data:
-        return m.answer("Поки немає інформації")
-    for item in data:
-        m.answer(item)
+        state["age"] = text
+        state["step"] = "season"
 
-@dp.message_handler(state=S.section)
-async def section(m: types.Message, s: FSMContext):
-    if m.text == "⬅️ Назад":
-        d = await s.get_data()
-        age, season = d["age"], d["season"]
-        return await m.answer("Тема:", reply_markup=kb(menu_data[age][season].keys()))
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        for season in menu_data[text].keys():
+            kb.add(KeyboardButton(season))
+        kb.add("⬅️ Назад")
 
-    d = await s.get_data()
-    t = menu_data[d["age"]][d["season"]][d["topic"]]
+        await m.answer("Оберіть сезон:", reply_markup=kb)
 
-    mapping = {
-        "📘 Методичка": "method",
-        "🎵 Відео/пісня": "video",
-        "💬 Батькам": "parents",
-        "🎲 Ігри": "games",
-        "📄 Завдання": "tasks"
-    }
+    # 🔹 ВИБІР СЕЗОНУ
+    elif state["step"] == "season":
+        if text == "⬅️ Назад":
+            await start(m)
+            return
 
-    key = mapping.get(m.text)
-    if not key:
-        return
+        age = state["age"]
 
-    for msg in t.get(key, []):
-        await m.answer(msg)
+        if text not in menu_data[age]:
+            return
+
+        state["season"] = text
+        state["step"] = "topic"
+
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        for topic in menu_data[age][text].keys():
+            kb.add(KeyboardButton(topic))
+        kb.add("⬅️ Назад")
+
+        await m.answer("Оберіть тему:", reply_markup=kb)
+
+    # 🔹 ВИБІР ТЕМИ
+    elif state["step"] == "topic":
+        if text == "⬅️ Назад":
+            state["step"] = "season"
+            await handler(types.Message(text=state["age"], from_user=m.from_user, chat=m.chat))
+            return
+
+        age = state["age"]
+        season = state["season"]
+
+        if text not in menu_data[age][season]:
+            return
+
+        state["topic"] = text
+        state["step"] = "section"
+
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.add("📘 Методичка")
+        kb.add("🎵 Відео/пісня")
+        kb.add("💬 Батькам")
+        kb.add("🎲 Ігри")
+        kb.add("📄 Завдання")
+        kb.add("⬅️ Назад")
+
+        await m.answer("Оберіть розділ:", reply_markup=kb)
+
+    # 🔹 РОЗДІЛИ
+    elif state["step"] == "section":
+        if text == "⬅️ Назад":
+            state["step"] = "topic"
+            await handler(types.Message(text=state["season"], from_user=m.from_user, chat=m.chat))
+            return
+
+        age = state["age"]
+        season = state["season"]
+        topic = state["topic"]
+
+        data = menu_data[age][season][topic]
+
+        mapping = {
+            "📘 Методичка": "method",
+            "🎵 Відео/пісня": "video",
+            "💬 Батькам": "parents",
+            "🎲 Ігри": "games",
+            "📄 Завдання": "tasks"
+        }
+
+        key = mapping.get(text)
+
+        if not key or key not in data:
+            await m.answer("❌ Немає даних")
+            return
+
+        if not data[key]:
+            await m.answer("⚠️ У цьому розділі поки нічого немає")
+            return
+
+        for item in data[key]:
+            await m.answer(item)
 
 # ================= RUN =================
 
