@@ -2,152 +2,155 @@ import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 
-TOKEN = "7556358154:AAGdl65GLbDi4EvHdRl84VPRxlRkqgsTGVg"
+TOKEN = "ТУТ_СВІЙ_ТОКЕН"
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher(bot, storage=MemoryStorage())
 
 DATA_PATH = "/var/data/menu_data.json"
 
+# ---------- LOAD DATA ----------
 def load_data():
-    try:
-        with open(DATA_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+    with open(DATA_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 menu_data = load_data()
-user_state = {}
 
-# ================= START =================
+# ---------- STATES ----------
+class MenuStates(StatesGroup):
+    age = State()
+    season = State()
+    topic = State()
+    section = State()
 
-@dp.message_handler(commands=["start"])
-async def start(m: types.Message):
-    global menu_data
-    menu_data = load_data()
+# ---------- KEYBOARD ----------
+def kb(items, add_back=True):
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    for i in items:
+        keyboard.add(KeyboardButton(i))
+    if add_back:
+        keyboard.add(KeyboardButton("⬅️ Назад"))
+    return keyboard
 
-    if not menu_data:
-        await m.answer("⚠️ Дані ще не додані")
+def section_kb():
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(KeyboardButton("📘 Методичка"))
+    keyboard.add(KeyboardButton("🎥 Відео/пісня"))
+    keyboard.add(KeyboardButton("👪 Батькам"))
+    keyboard.add(KeyboardButton("🎮 Ігри"))
+    keyboard.add(KeyboardButton("📝 Завдання"))
+    keyboard.add(KeyboardButton("⬅️ Назад"))
+    return keyboard
+
+# ---------- START ----------
+@dp.message_handler(commands=["start"], state="*")
+async def start(m: types.Message, s: FSMContext):
+    await s.finish()
+    await m.answer("Оберіть вікову категорію:", reply_markup=kb(menu_data.keys(), add_back=False))
+    await MenuStates.age.set()
+
+# ---------- AGE ----------
+@dp.message_handler(state=MenuStates.age)
+async def choose_age(m: types.Message, s: FSMContext):
+    if m.text not in menu_data:
+        return
+    await s.update_data(age=m.text)
+    await m.answer("Оберіть сезон:", reply_markup=kb(menu_data[m.text].keys()))
+    await MenuStates.season.set()
+
+# ---------- SEASON ----------
+@dp.message_handler(state=MenuStates.season)
+async def choose_season(m: types.Message, s: FSMContext):
+    data = await s.get_data()
+
+    if m.text == "⬅️ Назад":
+        return await m.answer("Оберіть вікову категорію:", reply_markup=kb(menu_data.keys(), add_back=False))
+
+    age = data["age"]
+
+    if m.text not in menu_data[age]:
         return
 
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    for age in menu_data.keys():
-        kb.add(KeyboardButton(age))
+    await s.update_data(season=m.text)
+    await m.answer("Оберіть тему:", reply_markup=kb(menu_data[age][m.text].keys()))
+    await MenuStates.topic.set()
 
-    user_state[m.from_user.id] = {"step": "age"}
-    await m.answer("Оберіть вікову категорію:", reply_markup=kb)
+# ---------- TOPIC ----------
+@dp.message_handler(state=MenuStates.topic)
+async def choose_topic(m: types.Message, s: FSMContext):
+    data = await s.get_data()
 
-# ================= HANDLER =================
+    if m.text == "⬅️ Назад":
+        age = data["age"]
+        return await m.answer("Оберіть сезон:", reply_markup=kb(menu_data[age].keys()))
 
-@dp.message_handler()
-async def handler(m: types.Message):
-    uid = m.from_user.id
-    text = m.text
+    age = data["age"]
+    season = data["season"]
 
-    if uid not in user_state:
-        await start(m)
+    if m.text not in menu_data[age][season]:
         return
 
-    state = user_state[uid]
+    await s.update_data(topic=m.text)
+    await m.answer("Оберіть розділ:", reply_markup=section_kb())
+    await MenuStates.section.set()
 
-    # 🔹 ВИБІР ВІКУ
-    if state["step"] == "age":
-        if text not in menu_data:
-            return
+# ---------- SECTION ----------
+@dp.message_handler(state=MenuStates.section)
+async def section(m: types.Message, s: FSMContext):
+    data = await s.get_data()
 
-        state["age"] = text
-        state["step"] = "season"
+    # 🔥 ВИПРАВЛЕНИЙ BACK
+    if m.text == "⬅️ Назад":
 
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        for season in menu_data[text].keys():
-            kb.add(KeyboardButton(season))
-        kb.add("⬅️ Назад")
+        # назад до тем
+        if "topic" in data:
+            age = data["age"]
+            season = data["season"]
+            return await m.answer(
+                "Оберіть тему:",
+                reply_markup=kb(menu_data[age][season].keys())
+            )
 
-        await m.answer("Оберіть сезон:", reply_markup=kb)
+        # назад до сезонів
+        elif "season" in data:
+            age = data["age"]
+            return await m.answer(
+                "Оберіть сезон:",
+                reply_markup=kb(menu_data[age].keys())
+            )
 
-    # 🔹 ВИБІР СЕЗОНУ
-    elif state["step"] == "season":
-        if text == "⬅️ Назад":
-            await start(m)
-            return
+        # назад до віку
+        elif "age" in data:
+            return await m.answer(
+                "Оберіть вікову категорію:",
+                reply_markup=kb(menu_data.keys(), add_back=False)
+            )
 
-        age = state["age"]
+    age = data["age"]
+    season = data["season"]
+    topic = data["topic"]
 
-        if text not in menu_data[age]:
-            return
+    topic_data = menu_data[age][season][topic]
 
-        state["season"] = text
-        state["step"] = "topic"
+    mapping = {
+        "📘 Методичка": "method",
+        "🎥 Відео/пісня": "video",
+        "👪 Батькам": "parents",
+        "🎮 Ігри": "games",
+        "📝 Завдання": "tasks"
+    }
 
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        for topic in menu_data[age][text].keys():
-            kb.add(KeyboardButton(topic))
-        kb.add("⬅️ Назад")
+    key = mapping.get(m.text)
+    if not key:
+        return
 
-        await m.answer("Оберіть тему:", reply_markup=kb)
+    for item in topic_data.get(key, []):
+        await m.answer(item)
 
-    # 🔹 ВИБІР ТЕМИ
-    elif state["step"] == "topic":
-        if text == "⬅️ Назад":
-            state["step"] = "season"
-            await handler(types.Message(text=state["age"], from_user=m.from_user, chat=m.chat))
-            return
-
-        age = state["age"]
-        season = state["season"]
-
-        if text not in menu_data[age][season]:
-            return
-
-        state["topic"] = text
-        state["step"] = "section"
-
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add("📘 Методичка")
-        kb.add("🎵 Відео/пісня")
-        kb.add("💬 Батькам")
-        kb.add("🎲 Ігри")
-        kb.add("📄 Завдання")
-        kb.add("⬅️ Назад")
-
-        await m.answer("Оберіть розділ:", reply_markup=kb)
-
-    # 🔹 РОЗДІЛИ
-    elif state["step"] == "section":
-        if text == "⬅️ Назад":
-            state["step"] = "topic"
-            await handler(types.Message(text=state["season"], from_user=m.from_user, chat=m.chat))
-            return
-
-        age = state["age"]
-        season = state["season"]
-        topic = state["topic"]
-
-        data = menu_data[age][season][topic]
-
-        mapping = {
-            "📘 Методичка": "method",
-            "🎵 Відео/пісня": "video",
-            "💬 Батькам": "parents",
-            "🎲 Ігри": "games",
-            "📄 Завдання": "tasks"
-        }
-
-        key = mapping.get(text)
-
-        if not key or key not in data:
-            await m.answer("❌ Немає даних")
-            return
-
-        if not data[key]:
-            await m.answer("⚠️ У цьому розділі поки нічого немає")
-            return
-
-        for item in data[key]:
-            await m.answer(item)
-
-# ================= RUN =================
-
+# ---------- RUN ----------
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
