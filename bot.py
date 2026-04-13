@@ -100,35 +100,35 @@ async def choose_topic(m: types.Message, s: FSMContext):
 
 # ---------- SECTION ----------
 @dp.message_handler(state=MenuStates.section)
-async def section(m: types.Message, s: FSMContext):
+if m.text == "⬅️ Назад":
     data = await s.get_data()
 
-    # 🔥 ВИПРАВЛЕНИЙ BACK
-    if m.text == "⬅️ Назад":
+    # назад до тем
+    if "topic" in data:
+        await MenuStates.topic.set()
+        age = data["age"]
+        season = data["season"]
+        return await m.answer(
+            "Оберіть тему:",
+            reply_markup=kb(menu_data[age][season].keys())
+        )
 
-        # назад до тем
-        if "topic" in data:
-            age = data["age"]
-            season = data["season"]
-            return await m.answer(
-                "Оберіть тему:",
-                reply_markup=kb(menu_data[age][season].keys())
-            )
+    # назад до сезонів
+    elif "season" in data:
+        await MenuStates.season.set()
+        age = data["age"]
+        return await m.answer(
+            "Оберіть сезон:",
+            reply_markup=kb(menu_data[age].keys())
+        )
 
-        # назад до сезонів
-        elif "season" in data:
-            age = data["age"]
-            return await m.answer(
-                "Оберіть сезон:",
-                reply_markup=kb(menu_data[age].keys())
-            )
-
-        # назад до віку
-        elif "age" in data:
-            return await m.answer(
-                "Оберіть вікову категорію:",
-                reply_markup=kb(menu_data.keys(), add_back=False)
-            )
+    # назад до віку
+    elif "age" in data:
+        await MenuStates.age.set()
+        return await m.answer(
+            "Оберіть вікову категорію:",
+            reply_markup=kb(menu_data.keys(), add_back=False)
+        )
 
     age = data["age"]
     season = data["season"]
