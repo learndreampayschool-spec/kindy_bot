@@ -82,17 +82,38 @@ async def handler(msg: types.Message):
         return
 
     # ---------- МІСЯЦЬ ----------
-    if user.get("season"):
-        months = menu_data[user["age"]][user["season"]]
-        if text in months:
-            user["month"] = text
-            user["level"] = "topic"
+if user.get("level") == "month":
+    months = menu_data[user["age"]][user["season"]]
 
-            topics = months[text]["topics"]
-            kb = list(topics.keys()) + ["📄 PDF"]
+    if text in months:
+        user["month"] = text
+        user["level"] = "topic"
 
-            await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
-            return
+        topics = months[text]["topics"]
+        kb = list(topics.keys()) + ["📄 PDF"]
+
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
+        return
+
+
+# ---------- ТЕМИ ----------
+if user.get("level") == "topic":
+    topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+
+    if text in topics:
+        user["topic"] = text
+        user["level"] = "inside_topic"
+
+        await msg.answer(
+            "Оберіть розділ:",
+            reply_markup=make_kb([
+                "📩 Батькам",
+                "📅 Дні",
+                "🎵 Пісні",
+                "🎮 Ігри"
+            ])
+        )
+        return
 
     # ---------- PDF ----------
     if text == "📄 PDF":
