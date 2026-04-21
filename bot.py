@@ -35,15 +35,49 @@ async def handler(msg: types.Message):
     user = user_state.setdefault(msg.chat.id, {"level": "age"})
 
     # НАЗАД
-    if text == "⬅️ Назад":
-        if user["level"] == "inside":
-            user["level"] = "topic"
-        elif user["level"] == "topic":
-            user["level"] = "month"
-        elif user["level"] == "month":
-            user["level"] = "season"
-        elif user["level"] == "season":
-            user["level"] = "age"
+if text == "⬅️ Назад":
+
+    # якщо був у днях
+    if user.get("level") == "days":
+        user["level"] = "inside"
+
+        await msg.answer(
+            "Оберіть розділ:",
+            reply_markup=make_kb(["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри"])
+        )
+        return
+
+    # якщо був у розділах теми
+    if user.get("level") == "inside":
+        user["level"] = "topic"
+
+        topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+        kb = list(topics.keys()) + ["📄 PDF"]
+
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
+        return
+
+    # якщо був у темах
+    if user.get("level") == "topic":
+        user["level"] = "month"
+
+        months = menu_data[user["age"]][user["season"]]
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(months.keys()))
+        return
+
+    # якщо був у місяці
+    if user.get("level") == "month":
+        user["level"] = "season"
+
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
+        return
+
+    # якщо був у сезоні
+    if user.get("level") == "season":
+        user["level"] = "age"
+
+        await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
+        return
 
     # ВІК
     if user["level"] == "age":
