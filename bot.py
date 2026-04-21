@@ -24,10 +24,12 @@ def make_kb(items, back=True):
         kb.add(KeyboardButton("⬅️ Назад"))
     return kb
 
+
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     user_state[msg.chat.id] = {"level": "age"}
     await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
+
 
 @dp.message_handler()
 async def handler(msg: types.Message):
@@ -35,66 +37,31 @@ async def handler(msg: types.Message):
     user = user_state.setdefault(msg.chat.id, {"level": "age"})
 
     # НАЗАД
-if text == "⬅️ Назад":
-
-    # якщо був у днях
-    if user.get("level") == "days":
-        user["level"] = "inside"
-
-        await msg.answer(
-            "Оберіть розділ:",
-            reply_markup=make_kb(["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри"])
-        )
-        return
-
-    # якщо був у розділах теми
-    if user.get("level") == "inside":
-        user["level"] = "topic"
-
-        topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
-        kb = list(topics.keys()) + ["📄 PDF"]
-
-        await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
-        return
-
-    # якщо був у темах
-    if user.get("level") == "topic":
-        user["level"] = "month"
-
-        months = menu_data[user["age"]][user["season"]]
-        await msg.answer("Оберіть місяць:", reply_markup=make_kb(months.keys()))
-        return
-
-    # якщо був у місяці
-    if user.get("level") == "month":
-        user["level"] = "season"
-
-        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
-        return
-
-    # якщо був у сезоні
-    if user.get("level") == "season":
-        user["level"] = "age"
-
-        await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
-        return
+    if text == "⬅️ Назад":
+        if user["level"] == "inside":
+            user["level"] = "topic"
+        elif user["level"] == "topic":
+            user["level"] = "month"
+        elif user["level"] == "month":
+            user["level"] = "season"
+        elif user["level"] == "season":
+            user["level"] = "age"
 
     # ВІК
     if user["level"] == "age":
         if text in menu_data:
             user["age"] = text
             user["level"] = "season"
-            await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[text].keys()))
-            return
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
+        return
 
     # СЕЗОН
     if user["level"] == "season":
-        seasons = menu_data[user["age"]]
-        if text in seasons:
+        if text in menu_data[user["age"]]:
             user["season"] = text
             user["level"] = "month"
-            await msg.answer("Оберіть місяць:", reply_markup=make_kb(seasons[text].keys()))
-            return
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(menu_data[user["age"]][user["season"]].keys()))
+        return
 
     # МІСЯЦЬ
     if user["level"] == "month":
@@ -102,30 +69,38 @@ if text == "⬅️ Назад":
         if text in months:
             user["month"] = text
             user["level"] = "topic"
-            topics = months[text]["topics"]
-            kb = list(topics.keys()) + ["📄 PDF"]
-            await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
-            return
+
+        topics = months[user["month"]]["topics"]
+        kb = list(topics.keys()) + ["📄 PDF"]
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
+        return
 
     # PDF
     if text == "📄 PDF":
         link = menu_data[user["age"]][user["season"]][user["month"]]["pdf"]
-        await msg.answer(link)
+        await msg.answer(f"📄 Відкрити PDF:\n{link}")
         return
 
-    # ТЕМА
+    # ТЕМИ
     if user["level"] == "topic":
         topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+
         if text in topics:
             user["topic"] = text
             user["level"] = "inside"
-            await msg.answer(
-                "Оберіть розділ:",
-                reply_markup=make_kb(["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри"])
-            )
-            return
 
-    topic = menu_data[user["age"]][user["season"]][user["month"]]["topics"].get(user.get("topic"))
+        await msg.answer(
+            "Оберіть розділ:",
+            reply_markup=make_kb([
+                "📩 Батькам",
+                "📅 Дні",
+                "🎵 Пісні",
+                "🎮 Ігри"
+            ])
+        )
+        return
+
+    topic = menu_data[user["age"]][user["season"]][user["month"]]["topics"][user["topic"]]
 
     # БАТЬКИ
     if text == "📩 Батькам":
@@ -138,7 +113,7 @@ if text == "⬅️ Назад":
         return
 
     if text in topic["days"]:
-        await msg.answer(topic["days"][text])
+        await msg.answer(topic["days"][text], protect_content=True)
         return
 
     # ПІСНІ
@@ -149,13 +124,16 @@ if text == "⬅️ Назад":
 
     for song in topic["songs"]:
         if text == song["name"]:
-            await msg.answer(f"{song['text']}\n\n{song['link']}")
+            await msg.answer(
+                f"🎵 {song['name']}\n\n{song['text']}\n\n{song['link']}"
+            )
             return
 
     # ІГРИ
     if text == "🎮 Ігри":
-        await msg.answer("\n".join(topic["games"]))
+        await msg.answer("\n".join(topic["games"]), protect_content=True)
         return
+
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
