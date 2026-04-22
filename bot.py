@@ -22,6 +22,7 @@ with open("menu_data.json", "r", encoding="utf-8") as f:
     menu_data = json.load(f)
 
 user_state = {}
+admin_state = {}
 
 # =====================
 # КНОПКИ
@@ -53,16 +54,8 @@ async def admin(msg: types.Message):
     if msg.chat.id != ADMIN_ID:
         return
 
-    user_state[msg.chat.id] = {"level": "admin"}
-    await msg.answer(
-        "🔐 Адмін панель",
-        reply_markup=make_kb([
-            "✏️ Батьки",
-            "📅 День",
-            "🎵 Пісня",
-            "🎮 Гра"
-        ])
-    )
+    admin_state[msg.chat.id] = {"step": "age"}
+    await msg.answer("🔐 Обери вік:", reply_markup=make_kb(menu_data.keys(), False))
 
 # =====================
 # ОСНОВНИЙ ХЕНДЛЕР
@@ -72,9 +65,93 @@ async def admin(msg: types.Message):
 async def handler(msg: types.Message):
     text = msg.text
     user = user_state.setdefault(msg.chat.id, {"level": "age"})
+    admin = admin_state.get(msg.chat.id)
 
     # =====================
-    # НАЗАД
+    # ADMIN ЛОГІКА
+    # =====================
+
+    if admin:
+
+        if text == "⬅️ Назад":
+            admin_state.pop(msg.chat.id)
+            await msg.answer("Вийшли з адмінки")
+            return
+
+        # ВІК
+        if admin["step"] == "age":
+            if text in menu_data:
+                admin["age"] = text
+                admin["step"] = "season"
+                await msg.answer("Обери сезон:", reply_markup=make_kb(menu_data[text].keys()))
+            return
+
+        # СЕЗОН
+        if admin["step"] == "season":
+            if text in menu_data[admin["age"]]:
+                admin["season"] = text
+                admin["step"] = "month"
+                await msg.answer("Обери місяць:", reply_markup=make_kb(menu_data[admin["age"]][text].keys()))
+            return
+
+        # МІСЯЦЬ
+        if admin["step"] == "month":
+            if text in menu_data[admin["age"]][admin["season"]]:
+                admin["month"] = text
+                admin["step"] = "topic"
+                topics = menu_data[admin["age"]][admin["season"]][text]["topics"]
+                await msg.answer("Обери тему:", reply_markup=make_kb(topics.keys()))
+            return
+
+        # ТЕМА
+        if admin["step"] == "topic":
+            topics = menu_data[admin["age"]][admin["season"]][admin["month"]]["topics"]
+            if text in topics:
+                admin["topic"] = text
+                admin["step"] = "edit"
+
+                await msg.answer(
+                    "Що редагуємо:",
+                    reply_markup=make_kb([
+                        "✏️ Батьки",
+                        "🎮 Ігри",
+                        "📄 PDF"
+                    ])
+                )
+            return
+
+        # ВИБІР ЩО РЕДАГУЄМО
+        if admin["step"] == "edit":
+            admin["edit_type"] = text
+            admin["step"] = "input"
+            await msg.answer("Введи текст:")
+            return
+
+        # ВВІД ТЕКСТУ
+        if admin["step"] == "input":
+
+            topic = menu_data[admin["age"]][admin["season"]][admin["month"]]["topics"][admin["topic"]]
+
+            if admin["edit_type"] == "✏️ Батьки":
+                topic["parents"] = text
+
+            elif admin["edit_type"] == "🎮 Ігри":
+                topic["games"] = topic.get("games", [])
+                topic["games"].append(text)
+
+            elif admin["edit_type"] == "📄 PDF":
+                topic["pdf"] = text
+
+            # ЗБЕРЕЖЕННЯ
+            with open("menu_data.json", "w", encoding="utf-8") as f:
+                json.dump(menu_data, f, ensure_ascii=False, indent=2)
+
+            await msg.answer("✅ Збережено")
+            admin_state.pop(msg.chat.id)
+            return
+
+    # =====================
+    # НАЗАД (КОРИСТУВАЧ)
     # =====================
 
     if text == "⬅️ Назад":
@@ -90,10 +167,6 @@ async def handler(msg: types.Message):
 
         elif user["level"] == "season":
             user["level"] = "age"
-
-        elif user["level"] == "admin":
-            await start(msg)
-            return
 
     # =====================
     # ВІК
