@@ -281,17 +281,20 @@ async def handler(msg: types.Message):
 
         elif text in ["Понеділок", "Вівторок", "Середа", "Четвер", "Пʼятниця"]:
             days = topic.get("days", {})
-            await msg.answer(days.get(text, "Немає інформації"))
+            await msg.answer(days.get(text, "Немає інформації"), protect_content=True)
 
         elif text == "🎵 Пісні":
             songs = topic.get("songs", [])
             kb = [s["name"] for s in songs] if songs else []
-            await msg.answer("Оберіть пісню:", reply_markup=make_kb(kb))
+            await msg.answer(
+    f"{s['name']}\n\n{s.get('text','')}\n\n{s.get('link','')}",
+    protect_content=True
+)
             return
 
         elif text == "🎮 Ігри та досліди":
             games = topic.get("games", [])
-            await msg.answer("\n".join(games) if games else "Немає ігор")
+            await msg.answer("\n".join(games) if games else "Немає ігор", protect_content=True)
 
         elif text == "📄 PDF":
             await msg.answer(topic.get("pdf", "Немає PDF"))
