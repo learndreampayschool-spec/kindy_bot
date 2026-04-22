@@ -1,12 +1,17 @@
 import logging
 import json
+import os
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-API_TOKEN = "7556358154:AAGdl65GLbDi4EvHdRl84VPRxlRkqgsTGVg"
+# =====================
+# НАЛАШТУВАННЯ
+# =====================
 
-ADMIN_ID = 711960970  # твій Telegram ID
+API_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "711960970"))
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,7 +23,10 @@ with open("menu_data.json", "r", encoding="utf-8") as f:
 
 user_state = {}
 
-# ---------- КНОПКИ ----------
+# =====================
+# КНОПКИ
+# =====================
+
 def make_kb(items, back=True):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     for item in items:
@@ -27,131 +35,185 @@ def make_kb(items, back=True):
         kb.add(KeyboardButton("⬅️ Назад"))
     return kb
 
+# =====================
+# START
+# =====================
 
-# ---------- START ----------
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     user_state[msg.chat.id] = {"level": "age"}
     await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
 
+# =====================
+# ADMIN
+# =====================
 
-# ---------- АДМІН ----------
 @dp.message_handler(commands=["admin"])
 async def admin(msg: types.Message):
     if msg.chat.id != ADMIN_ID:
         return
 
-    user_state[msg.chat.id] = {"level": "admin_age"}
-    await msg.answer("Адмін: оберіть вік", reply_markup=make_kb(menu_data.keys(), False))
+    user_state[msg.chat.id] = {"level": "admin"}
+    await msg.answer(
+        "🔐 Адмін панель",
+        reply_markup=make_kb([
+            "✏️ Батьки",
+            "📅 День",
+            "🎵 Пісня",
+            "🎮 Гра"
+        ])
+    )
 
+# =====================
+# ОСНОВНИЙ ХЕНДЛЕР
+# =====================
 
-# ---------- ОСНОВНИЙ ХЕНДЛЕР ----------
 @dp.message_handler()
 async def handler(msg: types.Message):
     text = msg.text
     user = user_state.setdefault(msg.chat.id, {"level": "age"})
 
-    level = user.get("level")
+    # =====================
+    # НАЗАД
+    # =====================
 
-    # 🔙 НАЗАД
     if text == "⬅️ Назад":
-        if level == "inside":
+
+        if user["level"] == "inside":
             user["level"] = "topic"
-        elif level == "topic":
+
+        elif user["level"] == "topic":
             user["level"] = "month"
-        elif level == "month":
+
+        elif user["level"] == "month":
             user["level"] = "season"
-        elif level == "season":
+
+        elif user["level"] == "season":
             user["level"] = "age"
 
-    # ВІК
-    if level == "age" and text in menu_data:
-        user["age"] = text
-        user["level"] = "season"
-        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[text].keys()))
-        return
+        elif user["level"] == "admin":
+            await start(msg)
+            return
 
+    # =====================
+    # ВІК
+    # =====================
+
+    if user["level"] == "age":
+        if text in menu_data:
+            user["age"] = text
+            user["level"] = "season"
+
+    # =====================
     # СЕЗОН
-    if level == "season":
+    # =====================
+
+    elif user["level"] == "season":
         seasons = menu_data[user["age"]]
         if text in seasons:
             user["season"] = text
             user["level"] = "month"
-            await msg.answer("Оберіть місяць:", reply_markup=make_kb(seasons[text].keys()))
-            return
 
+    # =====================
     # МІСЯЦЬ
-    if level == "month":
+    # =====================
+
+    elif user["level"] == "month":
         months = menu_data[user["age"]][user["season"]]
         if text in months:
             user["month"] = text
             user["level"] = "topic"
-            topics = months[text]["topics"]
-            kb = list(topics.keys()) + ["📄 PDF"]
-            await msg.answer("Оберіть тему:", reply_markup=make_kb(kb))
-            return
 
-    # PDF
-    if text == "📄 PDF":
-        link = menu_data[user["age"]][user["season"]][user["month"]]["pdf"]
-        await msg.answer(link)
-        return
-
+    # =====================
     # ТЕМА
-    if level == "topic":
+    # =====================
+
+    elif user["level"] == "topic":
         topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
         if text in topics:
             user["topic"] = text
             user["level"] = "inside"
+
             await msg.answer(
                 "Оберіть розділ:",
                 reply_markup=make_kb([
                     "📩 Батькам",
                     "📅 Дні",
                     "🎵 Пісні",
-                    "🎮 Ігри"
+                    "🎮 Ігри та досліди",
+                    "📄 PDF"
                 ])
             )
             return
 
-    topic = menu_data[user["age"]][user["season"]][user["month"]]["topics"].get(user.get("topic"))
+    # =====================
+    # ВСЕРЕДИНІ ТЕМИ
+    # =====================
 
-    if not topic:
-        return
+    elif user["level"] == "inside":
 
-    # БАТЬКИ
-    if text == "📩 Батькам":
-        await msg.answer(topic["parents"])
-        return
+        topic = menu_data[user["age"]][user["season"]][user["month"]]["topics"][user["topic"]]
 
-    # ДНІ
-    if text == "📅 Дні":
-        await msg.answer("Оберіть день:", reply_markup=make_kb(topic["days"].keys()))
-        return
+        if text == "📩 Батькам":
+            await msg.answer(topic.get("parents", "Немає тексту"))
 
-    if text in topic["days"]:
-        await msg.answer(topic["days"][text], protect_content=True)
-        return
-
-    # ІГРИ
-    if text == "🎮 Ігри":
-        await msg.answer("\n".join(topic["games"]), protect_content=True)
-        return
-
-    # ПІСНІ
-    if text == "🎵 Пісні":
-        kb = [s["name"] for s in topic["songs"]]
-        await msg.answer("Оберіть пісню:", reply_markup=make_kb(kb))
-        return
-
-    for song in topic["songs"]:
-        if text == song["name"]:
-            await msg.answer(
-                f"{song['name']}\n\n{song['text']}\n\n{song['link']}",
-                protect_content=True
-            )
+        elif text == "📅 Дні":
+            days = topic.get("days", {
+                "Понеділок": "",
+                "Вівторок": "",
+                "Середа": "",
+                "Четвер": "",
+                "Пʼятниця": ""
+            })
+            await msg.answer("Оберіть день:", reply_markup=make_kb(days.keys()))
             return
 
+        elif text in ["Понеділок", "Вівторок", "Середа", "Четвер", "Пʼятниця"]:
+            days = topic.get("days", {})
+            await msg.answer(days.get(text, "Немає інформації"))
+
+        elif text == "🎵 Пісні":
+            songs = topic.get("songs", [])
+            kb = [s["name"] for s in songs] if songs else []
+            await msg.answer("Оберіть пісню:", reply_markup=make_kb(kb))
+            return
+
+        elif text == "🎮 Ігри та досліди":
+            games = topic.get("games", [])
+            await msg.answer("\n".join(games) if games else "Немає ігор")
+
+        elif text == "📄 PDF":
+            await msg.answer(topic.get("pdf", "Немає PDF"))
+
+        else:
+            songs = topic.get("songs", [])
+            for s in songs:
+                if text == s["name"]:
+                    await msg.answer(
+                        f"{s['name']}\n\n{s.get('text','')}\n\n{s.get('link','')}"
+                    )
+                    return
+
+    # =====================
+    # ВІДМАЛЬОВКА КНОПОК
+    # =====================
+
+    if user["level"] == "age":
+        await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
+
+    elif user["level"] == "season":
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
+
+    elif user["level"] == "month":
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(menu_data[user["age"]][user["season"]].keys()))
+
+    elif user["level"] == "topic":
+        topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(topics.keys()))
+
+# =====================
+# СТАРТ
+# =====================
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
