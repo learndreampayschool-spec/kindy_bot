@@ -54,20 +54,51 @@ async def handler(msg: types.Message):
     # ---------- НАЗАД ----------
     if text == "⬅️ Назад":
 
-        if user["level"] == "inside":
-            user["level"] = "topic"
+    # з днів → назад в тему
+    if user["level"] == "days":
+        user["level"] = "inside"
 
-        elif user["level"] == "topic":
-            user["level"] = "month"
+        if user.get("admin"):
+            await msg.answer(
+                "✏️ Редагування:",
+                reply_markup=make_kb(["✏️ Батьки", "➕ Гра", "➕ Пісня"])
+            )
+        else:
+            await msg.answer(
+                "Оберіть:",
+                reply_markup=make_kb(["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри"])
+            )
+        return
 
-        elif user["level"] == "month":
-            user["level"] = "season"
+    # з теми всередині → список тем
+    if user["level"] == "inside":
+        user["level"] = "topic"
 
-        elif user["level"] == "season":
-            user["level"] = "age"
+        topics = menu_data[user["age"]][user["season"]][user["month"]]["topics"]
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(topics.keys()))
+        return
 
-        elif user["level"] == "days":
-            user["level"] = "inside"
+    # з тем → місяці
+    if user["level"] == "topic":
+        user["level"] = "month"
+
+        months = menu_data[user["age"]][user["season"]]
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(months.keys()))
+        return
+
+    # з місяців → сезони
+    if user["level"] == "month":
+        user["level"] = "season"
+
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(menu_data[user["age"]].keys()))
+        return
+
+    # з сезонів → вік
+    if user["level"] == "season":
+        user["level"] = "age"
+
+        await msg.answer("Оберіть вік:", reply_markup=make_kb(menu_data.keys(), False))
+        return
 
     # ---------- ВІК ----------
     if user["level"] == "age":
