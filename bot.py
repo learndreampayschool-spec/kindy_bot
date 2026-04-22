@@ -6,10 +6,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-# =====================
-# НАЛАШТУВАННЯ
-# =====================
-
 API_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "711960970"))
 
@@ -31,7 +27,7 @@ admin_state = {}
 def make_kb(items, back=True):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     for item in items:
-        kb.add(KeyboardButton(item))
+        kb.add(KeyboardButton(str(item)))
     if back:
         kb.add(KeyboardButton("⬅️ Назад"))
     return kb
@@ -114,20 +110,63 @@ async def handler(msg: types.Message):
                     "Що редагуємо:",
                     reply_markup=make_kb([
                         "✏️ Батьки",
+                        "📅 Дні",
                         "🎮 Ігри",
                         "📄 PDF"
                     ])
                 )
             return
 
-        # ВИБІР ЩО РЕДАГУЄМО
+        # ВИБІР РЕДАГУВАННЯ
         if admin["step"] == "edit":
-            admin["edit_type"] = text
-            admin["step"] = "input"
-            await msg.answer("Введи текст:")
+
+            if text == "📅 Дні":
+                admin["step"] = "choose_day"
+
+                topic = menu_data[admin["age"]][admin["season"]][admin["month"]]["topics"][admin["topic"]]
+
+                days = topic.get("days", {
+                    "Понеділок": "",
+                    "Вівторок": "",
+                    "Середа": "",
+                    "Четвер": "",
+                    "Пʼятниця": ""
+                })
+
+                await msg.answer("Обери день:", reply_markup=make_kb(days.keys()))
+                return
+
+            else:
+                admin["edit_type"] = text
+                admin["step"] = "input"
+                await msg.answer("Введи текст:")
+                return
+
+        # ВИБІР ДНЯ
+        if admin.get("step") == "choose_day":
+            admin["day"] = text
+            admin["step"] = "edit_day"
+            await msg.answer(f"Введи текст для {text}:")
             return
 
-        # ВВІД ТЕКСТУ
+        # ЗБЕРЕЖЕННЯ ДНЯ
+        if admin.get("step") == "edit_day":
+
+            topic = menu_data[admin["age"]][admin["season"]][admin["month"]]["topics"][admin["topic"]]
+
+            if "days" not in topic:
+                topic["days"] = {}
+
+            topic["days"][admin["day"]] = text
+
+            with open("menu_data.json", "w", encoding="utf-8") as f:
+                json.dump(menu_data, f, ensure_ascii=False, indent=2)
+
+            await msg.answer("✅ День збережено")
+            admin_state.pop(msg.chat.id)
+            return
+
+        # ВВІД ДАНИХ
         if admin["step"] == "input":
 
             topic = menu_data[admin["age"]][admin["season"]][admin["month"]]["topics"][admin["topic"]]
@@ -142,7 +181,6 @@ async def handler(msg: types.Message):
             elif admin["edit_type"] == "📄 PDF":
                 topic["pdf"] = text
 
-            # ЗБЕРЕЖЕННЯ
             with open("menu_data.json", "w", encoding="utf-8") as f:
                 json.dump(menu_data, f, ensure_ascii=False, indent=2)
 
@@ -257,15 +295,6 @@ async def handler(msg: types.Message):
 
         elif text == "📄 PDF":
             await msg.answer(topic.get("pdf", "Немає PDF"))
-
-        else:
-            songs = topic.get("songs", [])
-            for s in songs:
-                if text == s["name"]:
-                    await msg.answer(
-                        f"{s['name']}\n\n{s.get('text','')}\n\n{s.get('link','')}"
-                    )
-                    return
 
     # =====================
     # ВІДМАЛЬОВКА КНОПОК
