@@ -8,7 +8,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# Завантаження JSON
+# Завантаження даних
 with open("menu_data.json", "r", encoding="utf-8") as f:
     menu_data = json.load(f)
 
@@ -26,8 +26,7 @@ def make_kb(items):
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     users[msg.from_user.id] = {}
-    ages = list(menu_data.keys())
-    await msg.answer("Оберіть вік:", reply_markup=make_kb(ages))
+    await msg.answer("Оберіть вік:", reply_markup=make_kb(list(menu_data.keys())))
 
 
 @dp.message_handler()
@@ -40,34 +39,31 @@ async def handler(msg: types.Message):
 
     user = users[user_id]
 
+    # 🔙 НАЗАД (повністю робочий)
     if text == "⬅️ Назад":
 
-    # якщо в темі → назад до тем
-    if "topic" in user:
-        del user["topic"]
-        topics = menu_data[user["age"]][user["season"]][user["month"]]
-        await msg.answer("Оберіть тему:", reply_markup=make_kb(list(topics.keys())))
-        return
+        if "topic" in user:
+            del user["topic"]
+            topics = menu_data[user["age"]][user["season"]][user["month"]]
+            await msg.answer("Оберіть тему:", reply_markup=make_kb(list(topics.keys())))
+            return
 
-    # якщо в місяці → назад до місяців
-    elif "month" in user:
-        del user["month"]
-        months = menu_data[user["age"]][user["season"]]
-        await msg.answer("Оберіть місяць:", reply_markup=make_kb(list(months.keys())))
-        return
+        elif "month" in user:
+            del user["month"]
+            months = menu_data[user["age"]][user["season"]]
+            await msg.answer("Оберіть місяць:", reply_markup=make_kb(list(months.keys())))
+            return
 
-    # якщо в сезоні → назад до сезонів
-    elif "season" in user:
-        del user["season"]
-        seasons = menu_data[user["age"]]
-        await msg.answer("Оберіть сезон:", reply_markup=make_kb(list(seasons.keys())))
-        return
+        elif "season" in user:
+            del user["season"]
+            seasons = menu_data[user["age"]]
+            await msg.answer("Оберіть сезон:", reply_markup=make_kb(list(seasons.keys())))
+            return
 
-    # якщо в віці → назад до віку
-    elif "age" in user:
-        del user["age"]
-        await msg.answer("Оберіть вік:", reply_markup=make_kb(list(menu_data.keys())))
-        return
+        elif "age" in user:
+            del user["age"]
+            await msg.answer("Оберіть вік:", reply_markup=make_kb(list(menu_data.keys())))
+            return
 
     # ВІК
     if "age" not in user:
@@ -100,8 +96,6 @@ async def handler(msg: types.Message):
         topics = menu_data[user["age"]][user["season"]][user["month"]]
         if text in topics:
             user["topic"] = text
-
-            topic_data = topics[text]
 
             buttons = ["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри", "📄 PDF"]
             await msg.answer("Оберіть розділ:", reply_markup=make_kb(buttons))
