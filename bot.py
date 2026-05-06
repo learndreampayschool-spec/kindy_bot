@@ -40,16 +40,34 @@ async def handler(msg: types.Message):
 
     user = users[user_id]
 
-    # 🔙 НАЗАД
     if text == "⬅️ Назад":
-        if "topic" in user:
-            del user["topic"]
-        elif "month" in user:
-            del user["month"]
-        elif "season" in user:
-            del user["season"]
-        elif "age" in user:
-            del user["age"]
+
+    # якщо в темі → назад до тем
+    if "topic" in user:
+        del user["topic"]
+        topics = menu_data[user["age"]][user["season"]][user["month"]]
+        await msg.answer("Оберіть тему:", reply_markup=make_kb(list(topics.keys())))
+        return
+
+    # якщо в місяці → назад до місяців
+    elif "month" in user:
+        del user["month"]
+        months = menu_data[user["age"]][user["season"]]
+        await msg.answer("Оберіть місяць:", reply_markup=make_kb(list(months.keys())))
+        return
+
+    # якщо в сезоні → назад до сезонів
+    elif "season" in user:
+        del user["season"]
+        seasons = menu_data[user["age"]]
+        await msg.answer("Оберіть сезон:", reply_markup=make_kb(list(seasons.keys())))
+        return
+
+    # якщо в віці → назад до віку
+    elif "age" in user:
+        del user["age"]
+        await msg.answer("Оберіть вік:", reply_markup=make_kb(list(menu_data.keys())))
+        return
 
     # ВІК
     if "age" not in user:
