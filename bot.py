@@ -4,17 +4,24 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
 TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# Завантаження даних
-with open("menu_data.json", "r", encoding="utf-8") as f:
-    menu_data = json.load(f)
+# Завантаження JSON
+def load_data():
+    with open("menu_data.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_data(data):
+    with open("menu_data.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+menu_data = load_data()
 
 users = {}
 
-# Клавіатура
 def make_kb(items):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     for i in items:
@@ -29,8 +36,17 @@ async def start(msg: types.Message):
     await msg.answer("Оберіть вік:", reply_markup=make_kb(list(menu_data.keys())))
 
 
+@dp.message_handler(commands=["admin"])
+async def admin(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+    users[msg.from_user.id] = {"admin": True}
+    await msg.answer("Адмін: оберіть вік", reply_markup=make_kb(list(menu_data.keys())))
+
+
 @dp.message_handler()
 async def handler(msg: types.Message):
+    global menu_data
     user_id = msg.from_user.id
     text = msg.text
 
@@ -39,13 +55,17 @@ async def handler(msg: types.Message):
 
     user = users[user_id]
 
-    # 🔙 НАЗАД (повністю робочий)
+    # 🔙 НАЗАД
     if text == "⬅️ Назад":
 
-        if "topic" in user:
+        if "edit_mode" in user:
+            del user["edit_mode"]
+
+        elif "topic" in user:
             del user["topic"]
             topics = menu_data[user["age"]][user["season"]][user["month"]]
-            await msg.answer("Оберіть тему:", reply_markup=make_kb(list(topics.keys())))
+            topics = [k for k in topics if k != "PDF"]
+            await msg.answer("Оберіть тему:", reply_markup=make_kb(topics))
             return
 
         elif "month" in user:
@@ -87,8 +107,19 @@ async def handler(msg: types.Message):
         months = menu_data[user["age"]][user["season"]]
         if text in months:
             user["month"] = text
-            topics = list(months[text].keys())
-            await msg.answer("Оберіть тему:", reply_markup=make_kb(topics))
+
+            month_data = months[text]
+            topics = [k for k in month_data.keys() if k != "PDF"]
+
+            kb = topics + ["📄 PDF"]
+            await msg.answer("Оберіть:", reply_markup=make_kb(kb))
+        return
+
+    # 📄 PDF МІСЯЦЯ
+    if text == "📄 PDF":
+        month_data = menu_data[user["age"]][user["season"]][user["month"]]
+        pdf = month_data.get("PDF", "Немає PDF")
+        await msg.answer(f"📄 PDF:\n{pdf}")
         return
 
     # ТЕМА
@@ -97,17 +128,21 @@ async def handler(msg: types.Message):
         if text in topics:
             user["topic"] = text
 
-            buttons = ["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри", "📄 PDF"]
+            buttons = ["📩 Батькам", "📅 Дні", "🎵 Пісні", "🎮 Ігри"]
+            if user_id == ADMIN_ID:
+                buttons += ["✏️ Редагувати"]
+
             await msg.answer("Оберіть розділ:", reply_markup=make_kb(buttons))
         return
 
-    # ВСЕРЕДИНІ ТЕМИ
     topic_data = menu_data[user["age"]][user["season"]][user["month"]][user["topic"]]
 
+    # 📩 БАТЬКАМ
     if text == "📩 Батькам":
         await msg.answer(topic_data.get("Повідомлення батькам", "Немає тексту"))
         return
 
+    # 📅 ДНІ
     if text == "📅 Дні":
         days = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
         await msg.answer("Оберіть день:", reply_markup=make_kb(days))
@@ -125,8 +160,46 @@ async def handler(msg: types.Message):
         await msg.answer("Поки пусто")
         return
 
-    if text == "📄 PDF":
-        await msg.answer(topic_data.get("PDF", "Немає PDF"))
+    # ✏️ РЕДАГУВАННЯ
+    if text == "✏️ Редагувати" and user_id == ADMIN_ID:
+        user["edit_mode"] = True
+        await msg.answer("Що редагуємо?", reply_markup=make_kb([
+            "Батькам",
+            "Понеділок",
+            "Вівторок",
+            "Середа",
+            "Четвер",
+            "П’ятниця",
+            "📄 PDF"
+        ]))
+        return
+
+    if "edit_mode" in user and user_id == ADMIN_ID:
+
+        if text == "📄 PDF":
+            user["edit_field"] = "PDF"
+            await msg.answer("Встав посилання на PDF:")
+            return
+
+        user["edit_field"] = text
+        await msg.answer("Встав новий текст:")
+        return
+
+    if "edit_field" in user and user_id == ADMIN_ID:
+
+        field = user["edit_field"]
+
+        if field == "PDF":
+            menu_data[user["age"]][user["season"]][user["month"]]["PDF"] = text
+        else:
+            menu_data[user["age"]][user["season"]][user["month"]][user["topic"]][field] = text
+
+        save_data(menu_data)
+
+        del user["edit_field"]
+        del user["edit_mode"]
+
+        await msg.answer("Збережено ✅")
         return
 
 
